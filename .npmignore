@@ -1,1 +1,15 @@
-node_modules
+node_modules/
+example/
+test/
+logs/
+.env
+.DS_Store
+tests/
+README.md~
+LICENSE~
+.npmignore
+.git/
+.github/
+.vscode/
+.idea/
+*.log

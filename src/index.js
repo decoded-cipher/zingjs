@@ -1,7 +1,7 @@
 import { createServer } from 'http';
 import { EventEmitter } from 'events';
 import { readdirSync, existsSync, mkdirSync, writeFileSync, appendFileSync, statSync, createReadStream } from 'fs';
-import { join, extname, basename } from 'path';
+import { join, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -249,12 +249,6 @@ class ZingJS {
     async handleRoute(req, res) {
         const path = req.url.split('?')[0];
         const method = req.method;
-
-        if (path === '/docs') {
-            res.writeHead(403, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Forbidden: /docs is a reserved route' }));
-            return;
-        }
 
         let route = this.routes[`${path}:${method}`];
         if (!route) {

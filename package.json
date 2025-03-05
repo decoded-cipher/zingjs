@@ -1,29 +1,21 @@
 {
   "name": "zingjs",
   "version": "1.0.0",
-  "description": "A simple, fast, event-driven Node.js backend framework",
-  "main": "src/index.js",
+  "description": "A lightweight, event-driven, file-based routing Node.js backend framework.",
+  "main": "src/index.min.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.min.js"
   },
-  "bin": {
-    "zing": "./src/index.js"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/decoded-cipher/zingjs.git"
   },
-  "keywords": [
-    "nodejs",
-    "framework",
-    "express",
-    "fast",
-    "api"
-  ],
+  "keywords": ["nodejs", "framework", "api", "fast", "event-driven"],
   "author": "Arjun Krishna",
   "license": "MIT",
-  "dependencies": {
-    "child_process": "^1.0.2",
-    "events": "^3.3.0",
-    "fs": "^0.0.1-security",
-    "http": "^0.0.1-security",
-    "path": "^0.12.7"
-  }
+  "files": [
+    "index.min.js"
+  ],
+  "dependencies": {}
 }
