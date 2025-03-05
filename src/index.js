@@ -11,13 +11,14 @@ const LOG_FILE = join(process.cwd(), 'logs', 'server.log');
 const STATIC_FOLDER = join(process.cwd(), 'public');
 
 class ZingJS {
-    constructor({ enableCors = false, enableRateLimit = false, enableLogging = true, serveStatic = false } = {}) {
+    constructor({ enableCors = false, enableRateLimit = false, enableLogging = true, serveStatic = false, defaultResponseType = 'json' } = {}) {
         this.server = createServer(this.requestHandler.bind(this));
         this.middlewares = [];
         this.eventBus = new EventEmitter();
         this.routes = {};
         this.enableLogging = enableLogging;
         this.serveStatic = serveStatic;
+        this.defaultResponseType = defaultResponseType;
         this.ensureRoutesFolder();
         if (serveStatic) this.ensureStaticFolder();
         if (enableLogging) this.setupLogging();
@@ -44,7 +45,7 @@ class ZingJS {
         const routesPath = join(process.cwd(), 'routes');
         if (!existsSync(routesPath)) {
             mkdirSync(routesPath, { recursive: true });
-            writeFileSync(join(routesPath, 'index.js'), "export default { GET: (req) => ({ message: 'Hello from ZingJS dynamic route!' }) };");
+            writeFileSync(join(routesPath, 'index.js'), "export default { GET: (req) => ({ message: 'Hello from ZingJS dynamic route!' }) };\n");
         }
     }
 
@@ -183,9 +184,14 @@ class ZingJS {
         const routeKey = `${path}:${method}`;
         const route = this.routes[routeKey];
         if (route && typeof route.handler === 'function') {
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify(route.handler(req)));
-            this.log(`[INFO] ${method} ${path} - 200 OK`);
+            const response = route.handler(req);
+            if (this.defaultResponseType === 'json') {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify(response));
+            } else {
+                res.setHeader('Content-Type', 'text/plain');
+                res.end(String(response));
+            }
         } else {
             res.writeHead(404);
             res.end(JSON.stringify({ error: 'Not Found' }));
