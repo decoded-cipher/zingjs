@@ -1,6 +1,6 @@
 import { createServer } from 'http';
 import { EventEmitter } from 'events';
-import { readdirSync, existsSync, mkdirSync, writeFileSync, appendFileSync } from 'fs';
+import { readdirSync, existsSync, mkdirSync, writeFileSync, appendFileSync, statSync, createReadStream } from 'fs';
 import { join, extname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -16,6 +16,7 @@ class ZingJS {
         this.middlewares = [];
         this.eventBus = new EventEmitter();
         this.routes = {};
+        this.dynamicRoutes = [];
         this.enableLogging = enableLogging;
         this.serveStatic = serveStatic;
         this.defaultResponseType = defaultResponseType;
@@ -91,25 +92,50 @@ class ZingJS {
         appendFileSync(LOG_FILE, logMessage);
     }
 
-    loadRoutes() {
+    async loadRoutes() {
         const routesPath = join(process.cwd(), 'routes');
         if (existsSync(routesPath)) {
-            const routeFiles = readdirSync(routesPath);
-            routeFiles.forEach(file => {
-                if (extname(file) === '.js') {
-                    const routePath = '/' + basename(file, '.js');
-                    import(join(routesPath, file)).then(module => {
+            const loadRouteFile = async (filePath, routePath) => {
+                try {
+                    const module = await import(filePath);
+                    if (routePath.includes('[')) {
+                        this.dynamicRoutes.push({ routePath, paramNames: this.extractParamNames(routePath), module });
+                    } else {
                         Object.keys(module.default).forEach(method => {
                             this.routes[`${routePath}:${method}`] = {
                                 method,
                                 handler: module.default[method]
                             };
                         });
-                        this.log(`[INFO] Loaded route: ${routePath}`);
-                    }).catch(err => this.log(`[ERROR] Failed to load route ${file}: ${err}`));
+                    }
+                    this.log(`[INFO] Loaded route: ${routePath}`);
+                } catch (err) {
+                    this.log(`[ERROR] Failed to load route ${filePath}: ${err}`);
                 }
-            });
+            };
+
+            const scanRoutes = (dir, basePath = '') => {
+                readdirSync(dir, { withFileTypes: true }).forEach(entry => {
+                    const fullPath = join(dir, entry.name);
+                    const routePath = join(basePath, entry.name.replace('.js', '')).replace(/\\/g, '/');
+                    if (entry.isDirectory()) {
+                        scanRoutes(fullPath, routePath);
+                    } else if (extname(entry.name) === '.js') {
+                        loadRouteFile(fullPath, `/${routePath}`);
+                    }
+                });
+            };
+            scanRoutes(routesPath);
         }
+    }
+
+    extractParamNames(routePath) {
+        const paramNames = [];
+        routePath.replace(/\[([^\]]+)\]/g, (_, paramName) => {
+            paramNames.push(paramName);
+            return '([^/]+)';
+        });
+        return paramNames;
     }
 
     setupDefaultRoutes() {
@@ -220,7 +246,7 @@ class ZingJS {
         return false;
     }
 
-    handleRoute(req, res) {
+    async handleRoute(req, res) {
         const path = req.url.split('?')[0];
         const method = req.method;
 
@@ -230,10 +256,24 @@ class ZingJS {
             return;
         }
 
-        const routeKey = `${path}:${method}`;
-        const route = this.routes[routeKey];
+        let route = this.routes[`${path}:${method}`];
+        if (!route) {
+            for (const dynamicRoute of this.dynamicRoutes) {
+                const pattern = new RegExp(dynamicRoute.routePath.replace(/\[([^\]]+)\]/g, '([^/]+)'));
+                const match = path.match(pattern);
+                if (match) {
+                    req.params = dynamicRoute.paramNames.reduce((acc, name, index) => {
+                        acc[name] = match[index + 1];
+                        return acc;
+                    }, {});
+                    route = { handler: dynamicRoute.module.default[method] };
+                    break;
+                }
+            }
+        }
+
         if (route && typeof route.handler === 'function') {
-            const response = route.handler(req);
+            const response = await route.handler(req);
             res.setHeader('Content-Type', this.defaultResponseType === 'json' ? 'application/json' : 'text/plain');
             res.end(this.defaultResponseType === 'json' ? JSON.stringify(response) : String(response));
         } else {
