@@ -1,0 +1,29 @@
+{
+  "name": "zingjs",
+  "version": "1.0.0",
+  "description": "A simple, fast, event-driven Node.js backend framework",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "bin": {
+    "zing": "./src/index.js"
+  },
+  "keywords": [
+    "nodejs",
+    "framework",
+    "express",
+    "fast",
+    "api"
+  ],
+  "author": "Arjun Krishna",
+  "license": "MIT",
+  "dependencies": {
+    "child_process": "^1.0.2",
+    "events": "^3.3.0",
+    "fs": "^0.0.1-security",
+    "http": "^0.0.1-security",
+    "path": "^0.12.7"
+  }
+}
