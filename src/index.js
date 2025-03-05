@@ -1,6 +1,6 @@
 import { createServer } from 'http';
 import { EventEmitter } from 'events';
-import { readdirSync, existsSync, mkdirSync, writeFileSync, appendFileSync, createReadStream, statSync } from 'fs';
+import { readdirSync, existsSync, mkdirSync, writeFileSync, appendFileSync } from 'fs';
 import { join, extname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -11,7 +11,7 @@ const LOG_FILE = join(process.cwd(), 'logs', 'server.log');
 const STATIC_FOLDER = join(process.cwd(), 'public');
 
 class ZingJS {
-    constructor({ enableCors = false, enableRateLimit = false, enableLogging = true, serveStatic = false, defaultResponseType = 'json' } = {}) {
+    constructor({ enableCors = false, enableRateLimit = false, enableLogging = true, serveStatic = false, defaultResponseType = 'json', enableDocs = false } = {}) {
         this.server = createServer(this.requestHandler.bind(this));
         this.middlewares = [];
         this.eventBus = new EventEmitter();
@@ -19,6 +19,7 @@ class ZingJS {
         this.enableLogging = enableLogging;
         this.serveStatic = serveStatic;
         this.defaultResponseType = defaultResponseType;
+        this.enableDocs = enableDocs;
         this.ensureRoutesFolder();
         if (serveStatic) this.ensureStaticFolder();
         if (enableLogging) this.setupLogging();
@@ -39,6 +40,25 @@ class ZingJS {
 
     emit(event, data) {
         this.eventBus.emit(event, data);
+    }
+
+    generateDocs() {
+        return {
+            info: {
+                title: 'ZingJS API',
+                version: '1.0.0',
+                description: 'Auto-generated API documentation for ZingJS',
+            },
+            paths: Object.keys(this.routes).reduce((acc, route) => {
+                const [path, method] = route.split(':');
+                if (!acc[path]) acc[path] = {};
+                acc[path][method.toLowerCase()] = {
+                    description: `Handler for ${method} ${path}`,
+                    responses: { 200: { description: 'Successful response' } },
+                };
+                return acc;
+            }, {}),
+        };
     }
 
     ensureRoutesFolder() {
@@ -152,21 +172,10 @@ class ZingJS {
         this.log(`[INFO] ${req.method} ${req.url}`);
         req.query = Object.fromEntries(new URL(req.url, `http://localhost`).searchParams);
         req.params = {};
-
-        if (this.serveStatic && req.method === 'GET') {
-            let filePath = join(STATIC_FOLDER, req.url);
-            if (existsSync(filePath)) {
-                if (statSync(filePath).isDirectory()) {
-                    filePath = join(filePath, 'index.html');
-                }
-                if (existsSync(filePath) && !filePath.includes('..')) {
-                    res.writeHead(200);
-                    createReadStream(filePath).pipe(res);
-                    return;
-                }
-            }
-        }
-
+    
+        if (this.handleDocsRoute(req, res)) return;
+        if (this.handleStaticFiles(req, res)) return;
+    
         let idx = 0;
         const next = async () => {
             if (idx < this.middlewares.length) {
@@ -177,21 +186,56 @@ class ZingJS {
         };
         next();
     }
+    
+    handleDocsRoute(req, res) {
+        if (this.enableDocs && req.url === '/docs' && req.method === 'GET') {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(this.generateDocs(), null, 2));
+            return true;
+        }
+    
+        if (req.url.startsWith('/docs') && req.method === 'GET') {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Forbidden: /docs is a reserved route' }));
+            return true;
+        }
+    
+        return false;
+    }
+    
+    handleStaticFiles(req, res) {
+        if (this.serveStatic && req.method === 'GET' && !req.url.startsWith('/docs')) {
+            let filePath = join(STATIC_FOLDER, req.url);
+            if (existsSync(filePath)) {
+                if (statSync(filePath).isDirectory()) {
+                    filePath = join(filePath, 'index.html');
+                }
+                if (existsSync(filePath) && !filePath.includes('..')) {
+                    res.writeHead(200);
+                    createReadStream(filePath).pipe(res);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 
     handleRoute(req, res) {
         const path = req.url.split('?')[0];
         const method = req.method;
+
+        if (path === '/docs') {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Forbidden: /docs is a reserved route' }));
+            return;
+        }
+
         const routeKey = `${path}:${method}`;
         const route = this.routes[routeKey];
         if (route && typeof route.handler === 'function') {
             const response = route.handler(req);
-            if (this.defaultResponseType === 'json') {
-                res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify(response));
-            } else {
-                res.setHeader('Content-Type', 'text/plain');
-                res.end(String(response));
-            }
+            res.setHeader('Content-Type', this.defaultResponseType === 'json' ? 'application/json' : 'text/plain');
+            res.end(this.defaultResponseType === 'json' ? JSON.stringify(response) : String(response));
         } else {
             res.writeHead(404);
             res.end(JSON.stringify({ error: 'Not Found' }));
