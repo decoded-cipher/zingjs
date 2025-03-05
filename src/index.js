@@ -1,6 +1,6 @@
 import { createServer } from 'http';
 import { EventEmitter } from 'events';
-import { readdirSync, existsSync, mkdirSync, writeFileSync, appendFileSync } from 'fs';
+import { readdirSync, existsSync, mkdirSync, writeFileSync, appendFileSync, createReadStream, statSync } from 'fs';
 import { join, extname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -8,15 +8,18 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const LOG_FILE = join(process.cwd(), 'logs', 'server.log');
+const STATIC_FOLDER = join(process.cwd(), 'public');
 
 class ZingJS {
-    constructor({ enableCors = false, enableRateLimit = false, enableLogging = true } = {}) {
+    constructor({ enableCors = false, enableRateLimit = false, enableLogging = true, serveStatic = false } = {}) {
         this.server = createServer(this.requestHandler.bind(this));
         this.middlewares = [];
         this.eventBus = new EventEmitter();
         this.routes = {};
         this.enableLogging = enableLogging;
+        this.serveStatic = serveStatic;
         this.ensureRoutesFolder();
+        if (serveStatic) this.ensureStaticFolder();
         if (enableLogging) this.setupLogging();
         this.loadRoutes();
         this.setupDefaultRoutes();
@@ -41,7 +44,13 @@ class ZingJS {
         const routesPath = join(process.cwd(), 'routes');
         if (!existsSync(routesPath)) {
             mkdirSync(routesPath, { recursive: true });
-            writeFileSync(join(routesPath, 'index.js'), "export default { GET: (req) => ({ message: 'Hello from ZingJS dynamic route!' }) };\n");
+            writeFileSync(join(routesPath, 'index.js'), "export default { GET: (req) => ({ message: 'Hello from ZingJS dynamic route!' }) };");
+        }
+    }
+
+    ensureStaticFolder() {
+        if (!existsSync(STATIC_FOLDER)) {
+            mkdirSync(STATIC_FOLDER, { recursive: true });
         }
     }
 
@@ -142,6 +151,20 @@ class ZingJS {
         this.log(`[INFO] ${req.method} ${req.url}`);
         req.query = Object.fromEntries(new URL(req.url, `http://localhost`).searchParams);
         req.params = {};
+
+        if (this.serveStatic && req.method === 'GET') {
+            let filePath = join(STATIC_FOLDER, req.url);
+            if (existsSync(filePath)) {
+                if (statSync(filePath).isDirectory()) {
+                    filePath = join(filePath, 'index.html');
+                }
+                if (existsSync(filePath) && !filePath.includes('..')) {
+                    res.writeHead(200);
+                    createReadStream(filePath).pipe(res);
+                    return;
+                }
+            }
+        }
 
         let idx = 0;
         const next = async () => {
